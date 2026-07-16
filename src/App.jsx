@@ -57,6 +57,7 @@ const emptyForm = {
   notes: '',
   transportMode: 'voiture',
   coutTransport: '',
+  coutPeage: '',
   coutInscription: '',
   coutLogement: '',
   lat: null,
@@ -71,13 +72,29 @@ function formatEuros(n) {
 }
 
 function coutTotal(t) {
-  return (Number(t.coutTransport) || 0) + (Number(t.coutInscription) || 0) + (Number(t.coutLogement) || 0);
+  return (
+    (Number(t.coutTransport) || 0) +
+    (Number(t.coutPeage) || 0) +
+    (Number(t.coutInscription) || 0) +
+    (Number(t.coutLogement) || 0)
+  );
 }
 
 function coutVoitureAllerRetour(distanceKm, consommation, prixCarburant) {
   if (!distanceKm) return 0;
   const litres = ((distanceKm * 2) / 100) * (Number(consommation) || 0);
   return litres * (Number(prixCarburant) || 0);
+}
+
+// Estimation grossière : tarif moyen autoroute française pour une voiture (Classe 1),
+// d'après la grille tarifaire officielle en vigueur au 1er juin 2026. Les tarifs réels
+// dépendent de la section exacte empruntée (entrée/sortie) : pour un montant précis,
+// utilise le simulateur officiel (bouton dans le formulaire) et ajuste le champ à la main.
+const TARIF_PEAGE_MOYEN_PAR_KM = 0.1;
+
+function estimationPeageAllerRetour(distanceKm) {
+  if (!distanceKm) return 0;
+  return distanceKm * 2 * TARIF_PEAGE_MOYEN_PAR_KM;
 }
 
 function formatDateRange(debut, fin) {
@@ -220,6 +237,7 @@ export default function SuiviTournois() {
               parametres.prixCarburant
             );
             updated.coutTransport = Math.round(suggestion).toString();
+            updated.coutPeage = Math.round(estimationPeageAllerRetour(route.distanceKm)).toString();
           }
         }
       }
@@ -630,6 +648,7 @@ export default function SuiviTournois() {
                               parametres.prixCarburant
                             );
                             next.coutTransport = Math.round(suggestion).toString();
+                            next.coutPeage = Math.round(estimationPeageAllerRetour(form.distanceKm)).toString();
                           }
                           setForm(next);
                         }}
@@ -645,7 +664,7 @@ export default function SuiviTournois() {
                   })}
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-xs font-medium text-stone-500 mb-1 block">Transport (€)</label>
                     <input
@@ -655,6 +674,18 @@ export default function SuiviTournois() {
                       className="w-full border border-stone-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#0d2340]"
                       value={form.coutTransport}
                       onChange={(e) => setForm({ ...form, coutTransport: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 mb-1 block">Péages (€)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="w-full border border-stone-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[#0d2340]"
+                      value={form.coutPeage}
+                      onChange={(e) => setForm({ ...form, coutPeage: e.target.value })}
                       placeholder="0"
                     />
                   </div>
@@ -683,6 +714,21 @@ export default function SuiviTournois() {
                     />
                   </div>
                 </div>
+                {form.transportMode === 'voiture' && Number(form.coutPeage) > 0 && (
+                  <p className="text-xs text-stone-400 mt-1">
+                    Péages estimés sur une base moyenne (~{TARIF_PEAGE_MOYEN_PAR_KM}€/km) — pour le tarif exact de
+                    ton trajet,{' '}
+                    <a
+                      href="https://www.autoroutes.fr/fr/calcul-itineraire.htm"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline text-[#0d2340] font-medium"
+                    >
+                      utilise le simulateur officiel
+                    </a>{' '}
+                    puis ajuste le montant ci-dessus.
+                  </p>
+                )}
                 <p className="text-xs text-stone-400 mt-1.5 text-right">
                   Total : <span className="font-semibold text-[#0d2340]">{formatEuros(coutTotal(form))}</span>
                 </p>
@@ -763,8 +809,8 @@ function TournoiCard({ t, onEdit, onDelete, upcoming }) {
             <TransportIcon size={13} />
             <span className="font-semibold">{formatEuros(total)}</span>
             <span className="text-stone-400">
-              (transport {formatEuros(t.coutTransport)} · inscription {formatEuros(t.coutInscription)} · logement{' '}
-              {formatEuros(t.coutLogement)})
+              (transport {formatEuros(t.coutTransport)} · péages {formatEuros(t.coutPeage)} · inscription{' '}
+              {formatEuros(t.coutInscription)} · logement {formatEuros(t.coutLogement)})
             </span>
           </div>
         )}
