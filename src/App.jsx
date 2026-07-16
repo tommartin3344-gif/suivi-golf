@@ -17,9 +17,13 @@ import {
   Navigation,
   Loader2,
   Home,
+  Package,
+  LogOut,
 } from 'lucide-react';
 import GolfMap from './GolfMap';
+import Inventaire from './Inventaire';
 import { geocodeAddress, routeDistanceKm } from './geo';
+import { supabase } from './supabaseClient';
 
 const STATUTS = [
   { value: 'a_faire', label: 'À faire', color: 'bg-stone-100 text-stone-600 border-stone-300' },
@@ -34,9 +38,6 @@ const TRANSPORTS = [
   { value: 'autre', label: 'Autre', icon: MapPin },
 ];
 
-const STORAGE_KEY = 'tournois:2026';
-const PARAMS_KEY = 'parametres:2026';
-
 const defaultParams = {
   adresseDomicile: '',
   domicileLat: null,
@@ -44,6 +45,73 @@ const defaultParams = {
   prixCarburant: 1.85,
   consommation: 7,
 };
+
+// Conversion entre les noms de champs de l'appli (camelCase) et ceux de la base (snake_case)
+function tournoiFromDb(row) {
+  return {
+    id: row.id,
+    nom: row.nom,
+    club: row.club || '',
+    ville: row.ville || '',
+    dateDebut: row.date_debut || '',
+    dateFin: row.date_fin || '',
+    dateLimiteInscription: row.date_limite_inscription || '',
+    statut: row.statut || 'a_faire',
+    notes: row.notes || '',
+    transportMode: row.transport_mode || 'voiture',
+    coutTransport: row.cout_transport ?? '',
+    coutPeage: row.cout_peage ?? '',
+    coutInscription: row.cout_inscription ?? '',
+    coutLogement: row.cout_logement ?? '',
+    lat: row.lat,
+    lng: row.lng,
+    distanceKm: row.distance_km,
+    dureeMin: row.duree_min,
+  };
+}
+
+function tournoiToDb(t) {
+  return {
+    nom: t.nom,
+    club: t.club || null,
+    ville: t.ville || null,
+    date_debut: t.dateDebut,
+    date_fin: t.dateFin || null,
+    date_limite_inscription: t.dateLimiteInscription || null,
+    statut: t.statut,
+    notes: t.notes || null,
+    transport_mode: t.transportMode,
+    cout_transport: Number(t.coutTransport) || 0,
+    cout_peage: Number(t.coutPeage) || 0,
+    cout_inscription: Number(t.coutInscription) || 0,
+    cout_logement: Number(t.coutLogement) || 0,
+    lat: t.lat ?? null,
+    lng: t.lng ?? null,
+    distance_km: t.distanceKm ?? null,
+    duree_min: t.dureeMin ?? null,
+  };
+}
+
+function paramsFromDb(row) {
+  if (!row) return defaultParams;
+  return {
+    adresseDomicile: row.adresse_domicile || '',
+    domicileLat: row.domicile_lat,
+    domicileLng: row.domicile_lng,
+    prixCarburant: row.prix_carburant ?? 1.85,
+    consommation: row.consommation ?? 7,
+  };
+}
+
+function paramsToDb(p) {
+  return {
+    adresse_domicile: p.adresseDomicile || null,
+    domicile_lat: p.domicileLat ?? null,
+    domicile_lng: p.domicileLng ?? null,
+    prix_carburant: Number(p.prixCarburant) || 0,
+    consommation: Number(p.consommation) || 0,
+  };
+}
 
 const emptyForm = {
   id: null,
@@ -130,45 +198,25 @@ export default function SuiviTournois() {
   const [error, setError] = useState('');
   const [geoLoading, setGeoLoading] = useState(false);
   const [geoError, setGeoError] = useState('');
+  const [vue, setVue] = useState('planning');
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setTournois(JSON.parse(raw));
-    } catch (e) {
-      // pas encore de données enregistrées
-    }
-    try {
-      const rawParams = localStorage.getItem(PARAMS_KEY);
-      if (rawParams) {
-        const p = { ...defaultParams, ...JSON.parse(rawParams) };
-        setParametres(p);
-        setSettingsForm(p);
-      }
-    } catch (e) {
-      // pas encore de paramètres enregistrés
-    } finally {
+    async function charger() {
+      const { data: tData, error: tErr } = await supabase
+        .from('tournois')
+        .select('*')
+        .order('date_debut', { ascending: true });
+      if (!tErr && tData) setTournois(tData.map(tournoiFromDb));
+
+      const { data: pData } = await supabase.from('parametres').select('*').maybeSingle();
+      const p = paramsFromDb(pData);
+      setParametres(p);
+      setSettingsForm(p);
+
       setLoading(false);
     }
+    charger();
   }, []);
-
-  function persist(next) {
-    setTournois(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch (e) {
-      setError("Erreur d'enregistrement. Réessaie.");
-    }
-  }
-
-  function persistParams(next) {
-    setParametres(next);
-    try {
-      localStorage.setItem(PARAMS_KEY, JSON.stringify(next));
-    } catch (e) {
-      setError("Erreur d'enregistrement des paramètres.");
-    }
-  }
 
   async function handleGeocodeHome() {
     if (!settingsForm.adresseDomicile.trim()) return;
@@ -188,9 +236,17 @@ export default function SuiviTournois() {
     }
   }
 
-  function handleSaveSettings(e) {
+  async function handleSaveSettings(e) {
     e.preventDefault();
-    persistParams(settingsForm);
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: upsertErr } = await supabase
+      .from('parametres')
+      .upsert({ user_id: userData.user.id, ...paramsToDb(settingsForm) }, { onConflict: 'user_id' });
+    if (upsertErr) {
+      setError("Erreur d'enregistrement des paramètres.");
+      return;
+    }
+    setParametres(settingsForm);
     setShowSettings(false);
   }
 
@@ -256,20 +312,43 @@ export default function SuiviTournois() {
       return;
     }
     setError('');
-    let next;
+
     if (form.id) {
-      next = tournois.map((t) => (t.id === form.id ? form : t));
+      const { data, error: updErr } = await supabase
+        .from('tournois')
+        .update(tournoiToDb(form))
+        .eq('id', form.id)
+        .select()
+        .single();
+      if (updErr) {
+        setError("Erreur d'enregistrement. Réessaie.");
+        return;
+      }
+      setTournois(tournois.map((t) => (t.id === form.id ? tournoiFromDb(data) : t)));
     } else {
-      next = [...tournois, { ...form, id: Date.now().toString() }];
+      const { data, error: insErr } = await supabase
+        .from('tournois')
+        .insert(tournoiToDb(form))
+        .select()
+        .single();
+      if (insErr) {
+        setError("Erreur d'enregistrement. Réessaie.");
+        return;
+      }
+      setTournois([...tournois, tournoiFromDb(data)]);
     }
-    persist(next);
     setShowForm(false);
     setForm(emptyForm);
   }
 
-  function handleDelete(id) {
-    const next = tournois.filter((t) => t.id !== id);
-    persist(next);
+  async function handleDelete(id) {
+    const previous = tournois;
+    setTournois(tournois.filter((t) => t.id !== id));
+    const { error: delErr } = await supabase.from('tournois').delete().eq('id', id);
+    if (delErr) {
+      setError('Erreur de suppression. Réessaie.');
+      setTournois(previous);
+    }
   }
 
   const { aVenir, passes, prochain, budgetTotal, budgetAVenir } = useMemo(() => {
@@ -336,9 +415,33 @@ export default function SuiviTournois() {
               <p className="text-white/50 text-xs">budget saison ({formatEuros(budgetAVenir)} à venir)</p>
             </div>
           </div>
+
+          <div className="flex gap-1 mt-6 -mb-8 pt-2">
+            <button
+              onClick={() => setVue('planning')}
+              className={`text-sm font-medium px-4 py-2 rounded-t-lg transition ${
+                vue === 'planning' ? 'bg-[#f7f6f2] text-[#0d2340]' : 'text-white/60 hover:text-white'
+              }`}
+            >
+              Planning
+            </button>
+            <button
+              onClick={() => setVue('inventaire')}
+              className={`text-sm font-medium px-4 py-2 rounded-t-lg transition flex items-center gap-1.5 ${
+                vue === 'inventaire' ? 'bg-[#f7f6f2] text-[#0d2340]' : 'text-white/60 hover:text-white'
+              }`}
+            >
+              <Package size={14} /> Mon sac
+            </button>
+          </div>
         </div>
       </div>
 
+      {vue === 'inventaire' ? (
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <Inventaire />
+        </div>
+      ) : (
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-[#0d2340] font-bold text-lg">Planning</h2>
@@ -388,7 +491,7 @@ export default function SuiviTournois() {
         )}
 
         {tournois.length > 0 && (
-          <div className="mt-8">
+          <div className="mt-8 isolate relative z-0">
             <h2 className="text-[#0d2340] font-bold text-lg mb-3">Carte des tournois</h2>
             {!parametres.domicileLat && (
               <p className="text-xs text-stone-400 mb-2">
@@ -407,11 +510,12 @@ export default function SuiviTournois() {
           </div>
         )}
       </div>
+      )}
 
       {/* Réglages */}
       {showSettings && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[9999]"
           onClick={() => setShowSettings(false)}
         >
           <form
@@ -501,13 +605,21 @@ export default function SuiviTournois() {
                 <Check size={16} /> Enregistrer
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => supabase.auth.signOut()}
+              className="w-full flex items-center justify-center gap-1.5 text-red-600 text-xs font-medium py-2.5 mt-2 hover:bg-red-50 rounded-lg"
+            >
+              <LogOut size={14} /> Se déconnecter
+            </button>
           </form>
         </div>
       )}
 
       {/* Formulaire modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50" onClick={() => setShowForm(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-[9999]" onClick={() => setShowForm(false)}>
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={handleSave}
