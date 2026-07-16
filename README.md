@@ -2,12 +2,28 @@
 
 Application de suivi des tournois de golf (planning, logistique, budget).
 
+## Comptes utilisateurs (nouveau)
+
+L'application utilise maintenant de vrais comptes (email + mot de passe), avec une base de
+données en ligne gratuite (Supabase). Chaque personne qui crée un compte ne voit que ses
+propres tournois, son propre sac, et ses propres réglages — tes données ne sont jamais
+mélangées avec celles des autres.
+
+Si tu changes d'ordinateur ou de navigateur, connecte-toi simplement avec ton compte : tout
+est déjà là.
+
+**Configuration déjà faite pour toi** dans `src/supabaseClient.js` (URL + clé publique du
+projet). Si un jour tu veux créer ton propre projet Supabase séparé, remplace ces deux valeurs
+et exécute le script `supabase-setup.sql` (fourni à côté de ce README) dans l'éditeur SQL de
+ton nouveau projet Supabase pour recréer les tables.
+
 ## Nouveautés : carte et calcul de trajet
 
 - Renseigne ton adresse de domicile via l'icône ⚙️ en haut à droite (bouton "Localiser" pour la géolocaliser)
 - Renseigne le prix actuel du carburant et la consommation de ton véhicule dans les mêmes réglages
-- Dans le formulaire d'un tournoi, clique sur "Localiser et calculer la distance" : la distance et le coût
-  aller-retour en voiture se calculent automatiquement (tu peux toujours ajuster le montant à la main ensuite)
+- Dans le formulaire d'un tournoi, clique sur "Localiser et calculer la distance" : la distance, le coût
+  aller-retour en voiture, et une estimation des péages se calculent automatiquement (tu peux toujours ajuster
+  les montants à la main ensuite — les péages sont une estimation moyenne, pas un tarif exact)
 - Une carte apparaît en bas de la page avec tous les tournois localisés et ton domicile
 
 Le géocodage et le calcul d'itinéraire utilisent des services gratuits et sans clé API
