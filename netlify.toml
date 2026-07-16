@@ -1,0 +1,83 @@
+import React, { useState } from 'react';
+import { Flag, Loader2, Check, LogOut } from 'lucide-react';
+import { supabase } from './supabaseClient';
+
+export default function Paywall({ statut }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleAbonner() {
+    setLoading(true);
+    setError('');
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const res = await fetch('/.netlify/functions/create-checkout-session', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError("Impossible de lancer le paiement. Réessaie.");
+      }
+    } catch (e) {
+      setError('Erreur de connexion. Réessaie.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const messages = {
+    inactif: "Ton essai gratuit ou ton abonnement n'est plus actif.",
+    annule: 'Ton abonnement a été annulé.',
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0d2340] flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-[#d9622b] rounded-xl mb-3">
+            <Flag className="text-white" size={22} />
+          </div>
+          <h1 className="text-white text-xl font-black">Suivi Tournois Golf</h1>
+          <p className="text-white/50 text-sm mt-1">{messages[statut] || 'Abonne-toi pour continuer.'}</p>
+        </div>
+
+        <div className="bg-white rounded-xl p-6">
+          <ul className="space-y-2 mb-5 text-sm text-stone-600">
+            <li className="flex items-center gap-2">
+              <Check size={16} className="text-emerald-600 shrink-0" /> Planning et budget de tes tournois
+            </li>
+            <li className="flex items-center gap-2">
+              <Check size={16} className="text-emerald-600 shrink-0" /> Carte et calcul de trajet automatique
+            </li>
+            <li className="flex items-center gap-2">
+              <Check size={16} className="text-emerald-600 shrink-0" /> Suivi de ton sac et ton matériel
+            </li>
+          </ul>
+
+          {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+
+          <button
+            onClick={handleAbonner}
+            disabled={loading}
+            className="w-full bg-[#0d2340] text-white text-sm font-medium py-2.5 rounded-lg hover:bg-[#0d2340]/90 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <Loader2 size={15} className="animate-spin" />}
+            S'abonner
+          </button>
+
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="w-full flex items-center justify-center gap-1.5 text-stone-400 text-xs font-medium py-2.5 mt-2 hover:bg-stone-50 rounded-lg"
+          >
+            <LogOut size={14} /> Se déconnecter
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

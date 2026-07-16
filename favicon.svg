@@ -1,0 +1,77 @@
+const Stripe = require('stripe');
+const { createClient } = require('@supabase/supabase-js');
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+async function majAbonnement(subscription) {
+  const customerId = subscription.customer;
+
+  const { data: existing } = await supabaseAdmin
+    .from('abonnements')
+    .select('user_id')
+    .eq('stripe_customer_id', customerId)
+    .maybeSingle();
+
+  if (!existing) return; // customer inconnu (ne devrait pas arriver)
+
+  let statut = 'inactif';
+  if (subscription.status === 'trialing') statut = 'essai';
+  else if (subscription.status === 'active') statut = 'actif';
+  else if (['canceled', 'unpaid', 'incomplete_expired'].includes(subscription.status)) statut = 'annule';
+
+  await supabaseAdmin
+    .from('abonnements')
+    .update({
+      stripe_subscription_id: subscription.id,
+      statut,
+      fin_essai: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+      fin_periode: subscription.current_period_end
+        ? new Date(subscription.current_period_end * 1000).toISOString()
+        : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', existing.user_id);
+}
+
+exports.handler = async (event) => {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' };
+  }
+
+  const signature = event.headers['stripe-signature'];
+  let stripeEvent;
+
+  try {
+    const rawBody = event.isBase64Encoded ? Buffer.from(event.body, 'base64') : event.body;
+    stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('Signature webhook invalide :', err.message);
+    return { statusCode: 400, body: `Webhook Error: ${err.message}` };
+  }
+
+  try {
+    switch (stripeEvent.type) {
+      case 'checkout.session.completed': {
+        const session = stripeEvent.data.object;
+        if (session.subscription) {
+          const subscription = await stripe.subscriptions.retrieve(session.subscription);
+          await majAbonnement(subscription);
+        }
+        break;
+      }
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted':
+      case 'customer.subscription.created': {
+        await majAbonnement(stripeEvent.data.object);
+        break;
+      }
+      default:
+        break;
+    }
+    return { statusCode: 200, body: JSON.stringify({ received: true }) };
+  } catch (err) {
+    console.error(err);
+    return { statusCode: 500, body: JSON.stringify({ error: err.message }) };
+  }
+};

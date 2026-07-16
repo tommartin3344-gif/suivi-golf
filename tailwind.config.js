@@ -1,9 +1,30 @@
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: ['./index.html', './src/**/*.{js,jsx}'],
-  theme: {
-    extend: {},
+{
+  "name": "suivi-golf",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
   },
-  plugins: [],
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.7",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.24.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "stripe": "^22.3.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "autoprefixer": "^10.5.3",
+    "oxlint": "^1.71.0",
+    "postcss": "^8.5.19",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.1.1"
+  }
 }
-
